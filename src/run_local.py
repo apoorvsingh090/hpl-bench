@@ -27,15 +27,28 @@ Then score:
 import argparse
 import json
 import sys
+import urllib.error
 import urllib.request
 
 
 def build_prompt(item: dict) -> str:
-    passage = item.get("passage_hi", "").strip()
-    prompt = item["prompt_hi"].strip()
+    passage = str(item.get("passage_hi", "") or "").strip()
+    prompt = str(item.get("prompt_hi", "") or "").strip()
     track = item.get("track", "")
-    choices = item.get("choices")
+    choices = item.get("choices") if isinstance(item.get("choices"), list) else None
 
+    if track == "grounded":
+        # Grounded prompt always carries citation/abstention instructions,
+        # with choices appended when the item is MCQ.
+        base = ("निर्देश: उत्तर केवल दिए गए अंशों के आधार पर दें और स्रोत "
+                "[अंश 1]/[अंश 2] उद्धृत करें। अंशों में उत्तर न हो तो लिखें: "
+                "जानकारी उपलब्ध नहीं है।\n")
+        if passage:
+            base += f"अंश: {passage}\n"
+        base += f"प्रश्न: {prompt}\n"
+        if choices:
+            base += "विकल्प:\n" + "\n".join(f"{i+1}. {c}" for i, c in enumerate(choices)) + "\n"
+        return base + "उत्तर:"
     if choices:
         ch_txt = "\n".join(f"{i+1}. {c}" for i, c in enumerate(choices))
         base = "निर्देश: केवल सही उत्तर लिखें, कोई स्पष्टीकरण न दें।\n"
@@ -44,25 +57,14 @@ def build_prompt(item: dict) -> str:
         base += f"प्रश्न: {prompt}\nविकल्प:\n{ch_txt}\nउत्तर:"
         return base
     if track == "vyakaran":
-        return (
-            "निर्देश: अशुद्ध वाक्य को शुद्ध करके केवल शुद्ध वाक्य लिखें।\n"
-            f"अशुद्ध: {prompt}\nशुद्ध:"
-        )
+        return ("निर्देश: अशुद्ध वाक्य को शुद्ध करके केवल शुद्ध वाक्य लिखें।\n"
+                f"अशुद्ध: {prompt}\nशुद्ध:")
     if track == "saar":
-        return (
-            "निर्देश: निम्नलिखित गद्यांश का 80-100 शब्दों में सारांश लिखें। "
-            "नाम, संख्या और तथ्य न बदलें, कोई नई जानकारी न जोड़ें।\n"
-            f"गद्यांश: {passage or prompt}\nसारांश:"
-        )
+        return ("निर्देश: निम्नलिखित गद्यांश का सारांश लिखें। "
+                "नाम, संख्या और तथ्य न बदलें, कोई नई जानकारी न जोड़ें।\n"
+                f"गद्यांश: {passage or prompt}\nसारांश:")
     if track == "lekhan":
         return f"निर्देश: {prompt}\nशब्द-सीमा का पालन करें। शुद्ध, स्पष्ट और संगठित हिंदी में लिखें।\n"
-    if track == "grounded":
-        return (
-            "निर्देश: उत्तर केवल दिए गए अंशों के आधार पर दें और स्रोत [अंश 1]/[अंश 2] उद्धृत करें। "
-            "अंशों में उत्तर न हो तो लिखें: जानकारी उपलब्ध नहीं है।\n"
-            f"अंश: {passage}\nप्रश्न: {prompt}\nउत्तर:"
-        )
-    # padh-short / anumaan / register without choices
     base = "निर्देश: केवल सही उत्तर लिखें, कोई स्पष्टीकरण न दें।\n"
     if passage:
         base += f"गद्यांश: {passage}\n"
@@ -77,15 +79,15 @@ def load_gold(path, limit=None):
             line = line.strip()
             if line:
                 items.append(json.loads(line))
-    items.sort(key=lambda o: o["id"])
-    return items[:limit] if limit else items
+    items.sort(key=lambda o: o.get("id", ""))
+    if limit is None:
+        return items
+    if limit <= 0:
+        return []
+    return items[:limit]
 
 
 # ---------------- backends ----------------
-
-def gen_dummy(prompt: str, **kw) -> str:
-    return ""
-
 
 def gen_hf(prompts, model, max_new_tokens=256, temperature=0.0):
     try:
@@ -102,11 +104,12 @@ def gen_hf(prompts, model, max_new_tokens=256, temperature=0.0):
     out = []
     for p in prompts:
         r = pipe(p, return_full_text=False)[0]["generated_text"]
-        out.append(r.strip())
+        out.append(str(r).strip())
     return out
 
 
 def ollama_generate(prompt: str, model: str, host="http://localhost:11434", options=None) -> str:
+    host = (host or "").rstrip("/")
     body = json.dumps({
         "model": model, "prompt": prompt, "stream": False,
         "options": options or {},
@@ -115,8 +118,18 @@ def ollama_generate(prompt: str, model: str, host="http://localhost:11434", opti
         f"{host}/api/generate", data=body,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=300) as r:
-        return json.loads(r.read().decode("utf-8")).get("response", "").strip()
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            return str(json.loads(r.read().decode("utf-8")).get("response", "") or "").strip()
+    except urllib.error.HTTPError as e:
+        print(f"ERROR: Ollama HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}", file=sys.stderr)
+        raise SystemExit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: cannot reach Ollama at {host} ({e}). Is `ollama serve` running?", file=sys.stderr)
+        raise SystemExit(1)
+    except (ValueError, KeyError) as e:
+        print(f"ERROR: bad Ollama response: {e}", file=sys.stderr)
+        raise SystemExit(1)
 
 
 def openai_compat_generate(prompt: str, model: str, base_url: str, api_key="sk-no-key", temperature=0.0, max_tokens=512) -> str:
@@ -129,9 +142,21 @@ def openai_compat_generate(prompt: str, model: str, base_url: str, api_key="sk-n
         f"{base_url.rstrip('/')}/chat/completions", data=body,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
     )
-    with urllib.request.urlopen(req, timeout=300) as r:
-        data = json.loads(r.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"ERROR: server HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}", file=sys.stderr)
+        raise SystemExit(1)
+    except urllib.error.URLError as e:
+        print(f"ERROR: cannot reach server at {base_url} ({e})", file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        content = data["choices"][0]["message"].get("content") or ""
+    except (KeyError, IndexError, AttributeError) as e:
+        print(f"ERROR: unexpected server response shape: {e}; body={str(data)[:300]}", file=sys.stderr)
+        raise SystemExit(1)
+    return str(content).strip()
 
 
 def main():
@@ -176,7 +201,7 @@ def main():
 
     with open(args.out, "w", encoding="utf-8") as f:
         for it, p in zip(items, preds):
-            f.write(json.dumps({"id": it["id"], "prediction": p}, ensure_ascii=False) + "\n")
+            f.write(json.dumps({"id": it.get("id"), "prediction": p}, ensure_ascii=False) + "\n")
     print(f"wrote {args.out} ({len(items)} preds, backend={args.backend})")
 
 

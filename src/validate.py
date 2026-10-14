@@ -8,43 +8,74 @@ from pathlib import Path
 ID_RE = re.compile(r"^HPL-[A-Z]{2}-[0-9]{3}$")
 TRACKS = {"padh", "anumaan", "vyakaran", "saar", "lekhan", "register", "grounded"}
 LEVELS = {"A1", "A2", "B1", "B2", "C1"}
+ID_PREFIX = {"padh": "PA", "anumaan": "AN", "vyakaran": "VY", "saar": "SA",
+             "lekhan": "LE", "register": "RE", "grounded": "GR"}
 
-def fail(msg):
-    print(f"ERROR: {msg}", file=sys.stderr)
-    return False
 
 def validate_item(obj, lineno):
     ok = True
+    if not isinstance(obj, dict):
+        print(f"line {lineno}: item must be a JSON object", file=sys.stderr)
+        return False
     for f in ("id", "track", "level", "prompt_hi", "source", "version"):
         if f not in obj:
             print(f"line {lineno}: missing required field '{f}'", file=sys.stderr)
             ok = False
-    if "id" in obj and not ID_RE.match(obj["id"]):
-        print(f"line {lineno}: bad id '{obj['id']}' (want HPL-XX-000)", file=sys.stderr)
+    _id = obj.get("id")
+    if "id" in obj:
+        if not isinstance(_id, str) or not ID_RE.match(_id):
+            print(f"line {lineno}: bad id '{_id}' (want HPL-XX-000)", file=sys.stderr)
+            ok = False
+    track = obj.get("track")
+    if track not in TRACKS:
+        print(f"line {lineno}: bad track '{track}'", file=sys.stderr)
         ok = False
-    if obj.get("track") not in TRACKS:
-        print(f"line {lineno}: bad track '{obj.get('track')}'", file=sys.stderr)
-        ok = False
+    elif isinstance(_id, str) and ID_RE.match(_id):
+        want = ID_PREFIX.get(track)
+        got = _id.split("-")[1] if "-" in _id else ""
+        if want and got != want:
+            print(f"line {lineno}: warning: id prefix '{got}' != track '{track}' (want {want})",
+                  file=sys.stderr)
     if obj.get("level") not in LEVELS:
         print(f"line {lineno}: bad level '{obj.get('level')}'", file=sys.stderr)
         ok = False
-    if not obj.get("prompt_hi", "").strip():
-        print(f"line {lineno}: empty prompt_hi", file=sys.stderr)
+    ph = obj.get("prompt_hi", "")
+    if not isinstance(ph, str) or not ph.strip():
+        print(f"line {lineno}: empty/invalid prompt_hi (must be non-empty string)", file=sys.stderr)
         ok = False
     if "choices" in obj:
         ch = obj["choices"]
-        if not (2 <= len(ch) <= 5):
-            print(f"line {lineno}: choices must have 2-5 options", file=sys.stderr)
+        if not isinstance(ch, list) or not (2 <= len(ch) <= 5):
+            print(f"line {lineno}: choices must be a list of 2-5 options", file=sys.stderr)
             ok = False
-        if "answer" in obj and obj["answer"] not in ch:
-            print(f"line {lineno}: answer must exactly equal one choice", file=sys.stderr)
+        else:
+            for c in ch:
+                if not isinstance(c, str) or not c.strip():
+                    print(f"line {lineno}: choices must be non-empty strings", file=sys.stderr)
+                    ok = False
+                    break
+            if "answer" in obj and isinstance(obj["answer"], str) and obj["answer"] not in ch:
+                print(f"line {lineno}: answer must exactly equal one choice", file=sys.stderr)
+                ok = False
+    if "acceptable_answers" in obj:
+        aa = obj["acceptable_answers"]
+        if not isinstance(aa, list) or any(not isinstance(a, str) for a in aa):
+            print(f"line {lineno}: acceptable_answers must be a list of strings", file=sys.stderr)
             ok = False
-    if obj.get("track") == "lekhan" and "rubric" not in obj:
-        print(f"line {lineno}: lekhan items require 'rubric'", file=sys.stderr)
+    for f in ("answer", "passage_hi", "explanation_hi", "source", "version"):
+        if f in obj and obj[f] is not None and not isinstance(obj[f], str):
+            print(f"line {lineno}: field '{f}' must be a string", file=sys.stderr)
+            ok = False
+    if track in ("lekhan", "saar") and "rubric" not in obj:
+        print(f"line {lineno}: {track} items require 'rubric'", file=sys.stderr)
         ok = False
-    if obj.get("track") in ("padh", "grounded") and not obj.get("passage_hi"):
-        print(f"line {lineno}: warning: {obj.get('track')} usually needs passage_hi", file=sys.stderr)
+    if "rubric" in obj and not isinstance(obj["rubric"], dict):
+        print(f"line {lineno}: rubric must be an object", file=sys.stderr)
+        ok = False
+    if track in ("padh", "saar", "grounded") and not obj.get("passage_hi"):
+        print(f"line {lineno}: warning: {track} usually needs passage_hi", file=sys.stderr)
     return ok
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -56,8 +87,7 @@ def main():
     n = 0
     with path.open(encoding="utf-8") as f:
         for i, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
+            if not line.strip():
                 continue
             n += 1
             try:
@@ -66,10 +96,11 @@ def main():
                 print(f"line {i}: invalid JSON: {e}", file=sys.stderr)
                 ok_all = False
                 continue
-            if obj.get("id") in seen:
-                print(f"line {i}: duplicate id '{obj.get('id')}'", file=sys.stderr)
+            _id = obj.get("id") if isinstance(obj, dict) else None
+            if _id in seen:
+                print(f"line {i}: duplicate id '{_id}'", file=sys.stderr)
                 ok_all = False
-            seen.add(obj.get("id"))
+            seen.add(_id)
             if not validate_item(obj, i):
                 ok_all = False
     print(f"checked {n} items in {path}")
@@ -78,6 +109,7 @@ def main():
         return 0
     print("FAIL: validation errors found", file=sys.stderr)
     return 1
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

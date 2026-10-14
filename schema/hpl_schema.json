@@ -23,7 +23,7 @@
     },
     "prompt_hi": {
       "type": "string",
-      "description": "Instruction/question in Hindi. Prompts must be in Hindi, not English."
+      "description": "Instruction/question in Hindi. Prompts must be in Hindi; register-track items may contain documented Hinglish/English spans for robustness testing."
     },
     "choices": {
       "type": "array",
@@ -63,6 +63,10 @@
     {
       "if": {"properties": {"track": {"const": "lekhan"}}},
       "then": {"required": ["rubric"]}
+    },
+    {
+      "if": {"properties": {"track": {"const": "saar"}}},
+      "then": {"required": ["rubric", "passage_hi"]}
     }
   ]
 }

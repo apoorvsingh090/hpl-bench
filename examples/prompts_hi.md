@@ -1,6 +1,7 @@
 # HPL-Bench — Hindi prompts (copy-paste)
 
 All evaluation prompts must be in Hindi. Do not translate to English at test time.
+Exception: `register`-track items may contain documented Hinglish/English spans by design.
 
 ## MCQ / short answer
 
@@ -23,7 +24,7 @@ All evaluation prompts must be in Hindi. Do not translate to English at test tim
 ## सारांश
 
 ```
-निर्देश: निम्नलिखित गद्यांश का 80-100 शब्दों में सारांश लिखें। नाम, संख्या और तथ्य न बदलें, कोई नई जानकारी न जोड़ें।
+निर्देश: निम्नलिखित गद्यांश का सारांश लिखें। नाम, संख्या और तथ्य न बदलें, कोई नई जानकारी न जोड़ें।
 गद्यांश: {passage_hi}
 सारांश:
 ```
@@ -35,8 +36,12 @@ All evaluation prompts must be in Hindi. Do not translate to English at test tim
 शब्द-सीमा का पालन करें। शुद्ध, स्पष्ट और संगठित हिंदी में लिखें।
 ```
 
-## grounded QA (anti-hallucination)
+## grounded QA (anti-hallucination, MCQ सहित)
 
 ```
 निर्देश: उत्तर केवल दिए गए अंशों के आधार पर दें और स्रोत [अंश 1]/[अंश 2] उद्धृत करें। अंशों में उत्तर न हो तो लिखें: जानकारी उपलब्ध नहीं है।
+अंश: {passage_hi}
+प्रश्न: {prompt_hi}
+विकल्प (यदि हों): {choices}
+उत्तर:
 ```
