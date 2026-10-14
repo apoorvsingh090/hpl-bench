@@ -63,6 +63,27 @@ python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backen
 python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backend openai-compat --model google/gemma-2-2b-it --base-url http://localhost:8000/v1
 ```
 
+## No local GPU? Run on Hugging Face cloud
+
+`src/run_hf_api.py` sends the same Hindi prompts to HF Inference Providers —
+compute runs on HF servers, your machine only scores. Stdlib only, just needs a free token.
+
+```powershell
+# free account + token (read-only is enough)
+# https://huggingface.co/join  →  https://huggingface.co/settings/tokens
+$env:HF_TOKEN = "hf_..."
+
+# smoke test first (free-tier rate limits), then full 50
+python src/run_hf_api.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --model google/gemma-2-2b-it --limit 5
+python src/run_hf_api.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --model google/gemma-2-2b-it
+python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds preds.jsonl
+```
+
+Try Hindi-capable models: `google/gemma-2-2b-it`, `meta-llama/Llama-3.2-3B-Instruct`,
+`Qwen/Qwen3-8B`, `sarvamai/sarvam-2b-v0.5`, `CohereLabs/aya-expanse-8b`.
+Next step (optional): host the scorer as a Hugging Face Space so anyone can upload
+`preds.jsonl` and get the table without cloning.
+
 Notes:
 * Prompts are fixed Hindi templates — same for every model, so runs are comparable.
   Exception: `register` items contain documented Hinglish/English spans by design.
@@ -95,7 +116,8 @@ hpl-bench/
   data/test_hidden/             # git-ignored, leaderboard only
   src/validate.py               # stdlib schema check
   src/evaluate.py               # stdlib scorer (auto part + aggregates)
-  src/run_local.py              # run Ollama / HF / vLLM locally -> preds.jsonl
+  src/run_local.py              # run Ollama / HF-transformers / vLLM locally -> preds.jsonl
+  src/run_hf_api.py             # run on HF Inference Providers (no local GPU) -> preds.jsonl
   examples/prompts_hi.md
   examples/judge_rubric_hi.md   # LLM-judge spec + bias controls
   examples/sample_preds.jsonl
