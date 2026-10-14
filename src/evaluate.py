@@ -146,12 +146,15 @@ def main():
 
     preds = {}
     for o in load_jsonl(args.preds, "preds"):
+        if o["id"] in preds:
+            print(f"ERROR: duplicate pred id '{o['id']}'")
+            raise SystemExit(1)
         # NOTE: only "prediction" counts; a stray "answer" key is ignored
         # so that passing the gold file as preds cannot silently ace the run.
         preds[o["id"]] = o.get("prediction", "")
 
     per_track = defaultdict(lambda: {"n": 0, "exact": 0, "f1_sum": 0.0,
-                                     "auto_n": 0, "judge_needed": 0})
+                                     "auto_n": 0, "auto_exact": 0, "judge_needed": 0})
     rows = []
     for _id in sorted(gold):
         item = gold[_id]
@@ -168,6 +171,7 @@ def main():
         d["judge_needed"] += int(needs_judge)
         if not needs_judge and not s.get("skipped_auto"):
             d["auto_n"] += 1
+            d["auto_exact"] += s["exact"]
         rows.append({"id": _id, "track": tr, **s,
                      "needs_judge": needs_judge,
                      "missing_pred": _id not in preds})
@@ -185,7 +189,7 @@ def main():
         total_exact += d["exact"]
         total_f1 += d["f1_sum"]
         auto_n += d["auto_n"]
-        auto_exact += d["exact"] if tr not in ("saar", "lekhan") else 0
+        auto_exact += d["auto_exact"]
 
     def agg(names):
         n = sum(per_track[t]["n"] for t in names if t in per_track)
