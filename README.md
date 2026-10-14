@@ -38,6 +38,38 @@ python src/validate.py --data data/dev/hpl_dev.jsonl
 python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds examples/sample_preds.jsonl
 ```
 
+## Run it on your own local model — yes
+
+`src/run_local.py` builds the Hindi prompts from `examples/prompts_hi.md`,
+runs your local model, and writes the `preds.jsonl` that `evaluate.py` scores.
+No data leaves your machine (except hidden-test, which you don't have).
+
+```powershell
+# 0. smoke test, no model needed
+python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backend dummy --limit 5
+python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds preds.jsonl
+
+# 1. Ollama — easiest local path (stdlib only, no pip deps)
+# ollama pull gemma3:4b   # or aya-expanse:8b, qwen3:8b, etc.
+python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backend ollama --model gemma3:4b
+python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds preds.jsonl
+
+# 2. HuggingFace transformers — needs GPU for 2B+ models
+# pip install transformers torch --upgrade
+python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backend hf --model google/gemma-2-2b-it --max-new-tokens 256
+
+# 3. vLLM / LM Studio / llama.cpp server — any OpenAI-compatible endpoint
+# vllm serve google/gemma-2-2b-it --port 8000
+python src/run_local.py --gold data/dev/hpl_dev.jsonl --out preds.jsonl --backend openai-compat --model google/gemma-2-2b-it --base-url http://localhost:8000/v1
+```
+
+Notes:
+* Prompts are fixed Hindi templates — same for every model, so runs are comparable.
+* Deterministic scoring (`padh/anumaan/vyakaran/register` + short QA) runs fully offline.
+* `saar/lekhan` need a judge: use a second local model with the Hindi rubric
+  (`शुद्धता, स्पष्टता, संगठन, उपयुक्तता` 1–5), or human-read a 5% sample.
+* Dev set is 50 items (~5 min on a 4B model via Ollama). Full 3000-item bench will be sharded the same way.
+
 Prompts must be in Hindi — see `examples/prompts_hi.md`.
 Contributing: `CONTRIBUTING.md`. Hidden test: `data/README.md`.
 
@@ -52,6 +84,7 @@ hpl-bench/
   data/test_hidden/             # git-ignored, leaderboard only
   src/validate.py               # stdlib schema check
   src/evaluate.py               # stdlib scorer (auto part)
+  src/run_local.py              # run Ollama / HF / vLLM locally -> preds.jsonl
   examples/prompts_hi.md
   examples/sample_preds.jsonl
 ```
