@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+title: "HPL-Bench: Hindi Pathan-Lekhan Bench for Reading and Writing Comprehension"
+message: "If you use HPL-Bench, please cite it as below."
+type: software
+authors:
+  - family-names: "HPL-Bench contributors"
+license: MIT
+version: 0.1.0
+date-released: 2026-10-14
+repository-code: "https://github.com/apoorvsingh090/hpl-bench"
+keywords:
+  - hindi
+  - llm-evaluation
+  - reading-comprehension
+  - natural-language-generation
+  - indic-nlp

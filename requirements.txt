@@ -1,0 +1,10 @@
+# HPL-Bench requirements
+# Core eval has zero hard dependencies (stdlib only).
+# Optional: uncomment for semantic metrics / LLM-judge.
+
+# sacrebleu>=2.4      # chrF for summarization / paraphrase
+# bert-score>=0.3      # semantic similarity (multilingual)
+# rouge-score>=0.1
+# jsonschema>=4.0      # strict schema validation (fallback validator in stdlib included)
+# openai>=1.0          # optional LLM-as-judge backend
+# pytest>=8.0

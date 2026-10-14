@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HPL-Bench item",
+  "type": "object",
+  "required": ["id", "track", "level", "prompt_hi", "source", "version"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^HPL-[A-Z]{2}-[0-9]{3}$",
+      "description": "Stable ID, e.g. HPL-PA-001"
+    },
+    "track": {
+      "type": "string",
+      "enum": ["padh", "anumaan", "vyakaran", "saar", "lekhan", "register", "grounded"]
+    },
+    "level": {
+      "type": "string",
+      "enum": ["A1", "A2", "B1", "B2", "C1"]
+    },
+    "passage_hi": {
+      "type": "string",
+      "description": "Optional reading passage in Hindi (Devanagari). Required for padh/saar/grounded."
+    },
+    "prompt_hi": {
+      "type": "string",
+      "description": "Instruction/question in Hindi. Prompts must be in Hindi, not English."
+    },
+    "choices": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 2,
+      "maxItems": 5,
+      "description": "For MCQ. Answer must exactly equal one choice."
+    },
+    "answer": {
+      "type": "string",
+      "description": "Reference answer in Hindi. For MCQ: the correct choice text."
+    },
+    "acceptable_answers": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Optional paraphrases accepted by exact-match scorer."
+    },
+    "rubric": {
+      "type": "object",
+      "description": "Required for lekhan/saar long-form. 1-5 criteria in Hindi.",
+      "properties": {
+        "shuddhata": {"type": "string"},
+        "spashtata": {"type": "string"},
+        "sangathan": {"type": "string"},
+        "upyuktata": {"type": "string"}
+      },
+      "additionalProperties": {"type": "string"}
+    },
+    "explanation_hi": {
+      "type": "string",
+      "description": "Why the answer is correct (for dev transparency)."
+    },
+    "source": {"type": "string"},
+    "version": {"type": "string"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"track": {"const": "lekhan"}}},
+      "then": {"required": ["rubric"]}
+    }
+  ]
+}
