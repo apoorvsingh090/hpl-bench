@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest new items, tracks, or harness improvements
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Describe the feature
+      description: New benchmark items, a new track, scorer improvement, runner backend, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Use case
+      description: What gap in Hindi reading/writing evaluation does this fill?
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I read `CONTRIBUTING.md` (item rules, quality bar, provenance requirements)
+          required: true
+        - label: Contributed items will be original or carry source + license in `source`
+          required: true

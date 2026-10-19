@@ -43,3 +43,21 @@ python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds examples/sample_pre
 ```
 
 Hidden test (`data/test_hidden/`) is maintained by maintainers only — do not PR answers for it.
+
+## Pull requests
+
+- **Branch naming:** `feature/<short-description>` or `fix/<short-description>`
+  from `master`.
+- **Commit messages:** conventional style already used in this repo
+  (`feat:` / `fix:` / `docs:`, one logical change per commit).
+- **Before opening a PR:** run the quality-bar commands above; CI runs the
+  same validator + scorer smoke test on every push and pull request.
+- **Item PRs:** keep the diff to one track or one fix theme; reviewers check
+  language accuracy, provenance, and schema match. Hidden-test items are
+  maintained by maintainers only — never open PRs containing them.
+- **Scorer/validator changes:** include a note in the PR describing the
+  scoring behaviour before vs after.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).

@@ -1,0 +1,44 @@
+name: Bug report
+description: Broken item, scorer/validator bug, or docs error
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Describe the bug
+      description: Wrong gold answer, validator false-negative, scorer miscalculation, broken docs, etc.
+      placeholder: "`evaluate.py` scores an incorrect MCQ prediction as correct for item HPL-007."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds ...`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "e.g. v0.1.1 or commit abc123"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates
+          required: true
+        - label: This report does not contain hidden-test items (see `data/README.md`)
+          required: true

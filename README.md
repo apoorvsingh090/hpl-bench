@@ -1,5 +1,9 @@
 # HPL-Bench — Hindi Pathan-Lekhan Bench
 
+[![CI](https://img.shields.io/github/actions/workflow/status/apoorvsingh090/hpl-bench/ci.yml?branch=master)](https://github.com/apoorvsingh090/hpl-bench/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python 3](https://img.shields.io/badge/python-stdlib%20only-blue.svg)](src)
+
 **Hindi reading + writing comprehension for AI models.**
 
 MIT-licensed, open, native-Hindi-first. Built as a modern successor to
@@ -141,6 +145,23 @@ hpl-bench/
 * Passages are short toys (≤60 words), not 150–800; no tables/long-doc/dialect beyond Hinglish.
 * No verifiable instruction-following / multi-turn / math / tool-use (see IFEval-Hi, MT-Bench-Hi, GSM8K-Hi, BFCL-Hi).
 * n=50 → per-track CIs ±15–30%. Don't leaderboard on seed alone.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for item rules, levels, tracks, and
+the quality bar; [CHANGELOG.md](CHANGELOG.md) tracks releases. By
+participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). Use
+the issue templates for bugs and feature requests; beginner-friendly issues
+carry the
+[`good first issue`](https://github.com/apoorvsingh090/hpl-bench/labels/good%20first%20issue)
+label.
+
+## Security
+
+Report benchmark-integrity or tooling vulnerabilities (hidden-test leaks,
+scorer exploits) privately via
+[GitHub Security Advisories](https://github.com/apoorvsingh090/hpl-bench/security/advisories);
+see [SECURITY.md](SECURITY.md).
 
 ## License
 

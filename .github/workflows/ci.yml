@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Validate dev set against schema (stdlib)
+        run: python src/validate.py --data data/dev/hpl_dev.jsonl
+
+      - name: Score sample predictions (stdlib smoke test)
+        run: python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds examples/sample_preds.jsonl
