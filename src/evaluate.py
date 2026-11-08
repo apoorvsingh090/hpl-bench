@@ -19,60 +19,43 @@ Scoring:
 import argparse
 import json
 import re
-import unicodedata
+import sys
 from collections import defaultdict
 from pathlib import Path
 
-STRIP_CHARS = " \t\n\r'\"“”‘’।.,!?;:()[]{}-–—"
+from bench_common import (
+    DEFAULT_STRIP,
+    InputError,
+    normalize,
+    to_str,
+    token_f1_tokens,
+    tokenize,
+)
+
+# Hindi strip set: includes the danda; chandrabindu folds into anusvara.
+STRIP_CHARS = DEFAULT_STRIP + "\u0964"
+REPLACEMENTS = (("\u0901", "\u0902"),)
 INDEX_RE = re.compile(r"^\(?\s*([1-5a-eA-E])\s*[.\)]?\s*$")
 
 # Reading vs writing aggregates reported alongside per-track scores.
 PATHAN_TRACKS = {"padh", "anumaan", "grounded"}
 LEKHAN_TRACKS = {"vyakaran", "saar", "lekhan"}
+REGISTER_TRACK = "register"
 
 
-def to_str(s) -> str:
-    if s is None:
-        return ""
-    if isinstance(s, str):
-        return s
-    return str(s)
+def normalize_text(s):
+    return normalize(s, STRIP_CHARS, REPLACEMENTS)
 
 
-def normalize(s) -> str:
-    s = to_str(s)
-    s = unicodedata.normalize("NFC", s)
-    # Hindi-insensitive: chandrabindu ~ anusvara, drop ZWJ/ZWNJ, NBSP -> space
-    s = s.replace("\u0901", "\u0902").replace("\u200c", "").replace("\u200d", "")
-    s = s.replace("\u00a0", " ")
-    s = s.strip().strip(STRIP_CHARS).strip()
-    s = re.sub(r"\s+", " ", s)
-    if re.search(r"[A-Za-z]", s):
-        s = s.casefold()
-    return s
+def tokenize_text(s):
+    return tokenize(s, STRIP_CHARS, REPLACEMENTS)
 
 
-def tokenize(s):
-    s = normalize(s)
-    return [t for t in (t.strip(STRIP_CHARS) for t in s.split(" ")) if t]
+def token_f1(pred, gold):
+    return token_f1_tokens(tokenize_text(pred), tokenize_text(gold))
 
 
-def token_f1(pred, gold) -> float:
-    from collections import Counter
-    pt, gt = tokenize(pred), tokenize(gold)
-    if not pt and not gt:
-        return 0.0
-    if not pt or not gt:
-        return 0.0
-    overlap = sum((Counter(pt) & Counter(gt)).values())
-    if overlap == 0:
-        return 0.0
-    p = overlap / len(pt)
-    r = overlap / len(gt)
-    return 2 * p * r / (p + r)
-
-
-def resolve_index(pred: str, choices) -> str:
+def resolve_index(pred, choices):
     """Map a bare '1'/'b' style answer onto the referenced choice text."""
     if not choices:
         return pred
@@ -86,47 +69,128 @@ def resolve_index(pred: str, choices) -> str:
     return pred
 
 
-def is_long_form(item) -> bool:
-    if item.get("track") in ("saar", "lekhan"):
-        return True
-    ans = item.get("answer", "")
-    if item.get("track") == "grounded" and len(tokenize(ans)) > 25:
-        return True
-    return False
-
-
-def score_item(item, pred):
-    pred = to_str(pred)
+def prepare_gold(item):
+    """Normalize the reference answers once per item (hot loop expects this)."""
     gold = to_str(item.get("answer", ""))
-    if not gold.strip():
-        return {"exact": 0, "token_f1": 0.0, "skipped_auto": True}
     aa = item.get("acceptable_answers", [])
     if not isinstance(aa, list):
         aa = []
-    aa = [a for a in [gold] + aa if isinstance(a, str)]
+    answers = [a for a in [gold] + aa if isinstance(a, str)]
+    return {
+        "gold": gold,
+        "normalized_answers": frozenset(normalize_text(a) for a in answers),
+        "answer_tokens": tuple(tokenize_text(a) for a in answers),
+        "answer_token_count": len(tokenize_text(gold)),
+    }
+
+
+def is_long_form(item, prepared=None):
+    if item.get("track") in ("saar", "lekhan"):
+        return True
+    if item.get("track") == "grounded":
+        limit = prepared["answer_token_count"] if prepared else None
+        return (limit if limit is not None else len(tokenize_text(item.get("answer", "")))) > 25
+    return False
+
+
+def score_item(item, pred, prepared=None):
+    prepared = prepared or prepare_gold(item)
+    pred = to_str(pred)
+    if not prepared["gold"].strip():
+        return {"exact": 0, "token_f1": 0.0, "skipped_auto": True}
     choices = item.get("choices") if isinstance(item.get("choices"), list) else None
-    candidates = [pred, resolve_index(pred, choices)]
-    exact = int(any(normalize(c) == normalize(a) for c in candidates for a in aa))
-    f1 = round(max([token_f1(pred, a) for a in aa] + [0.0]), 4)
+    candidates = (pred, resolve_index(pred, choices))
+    normalized_candidates = (normalize_text(c) for c in candidates)
+    exact = int(any(c in prepared["normalized_answers"] for c in normalized_candidates))
+    pred_tokens = tokenize_text(pred)
+    f1 = round(max(
+        [token_f1_tokens(pred_tokens, gt) for gt in prepared["answer_tokens"]] + [0.0]
+    ), 4)
     return {"exact": exact, "token_f1": f1, "skipped_auto": False}
 
 
 def load_jsonl(path, what):
-    items = []
-    with open(path, encoding="utf-8") as f:
-        for i, line in enumerate(f, 1):
-            if not line.strip():
-                continue
-            try:
-                o = json.loads(line)
-            except json.JSONDecodeError as e:
-                print(f"ERROR: {what} line {i}: invalid JSON: {e}")
-                raise SystemExit(1)
-            if not isinstance(o, dict) or "id" not in o:
-                print(f"ERROR: {what} line {i}: each line must be an object with 'id'")
-                raise SystemExit(1)
-            items.append(o)
-    return items
+    from bench_common import load_jsonl as _load
+
+    try:
+        return _load(path, what)
+    except InputError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+def build_gold_map(gold_list):
+    gold = {}
+    for o in gold_list:
+        if o["id"] in gold:
+            print(f"ERROR: duplicate gold id '{o['id']}'")
+            raise SystemExit(1)
+        gold[o["id"]] = o
+    return gold
+
+
+def build_pred_map(pred_list):
+    preds = {}
+    for o in pred_list:
+        if o["id"] in preds:
+            print(f"ERROR: duplicate pred id '{o['id']}'")
+            raise SystemExit(1)
+        # NOTE: only "prediction" counts; a stray "answer" key is ignored
+        # so that passing the gold file as preds cannot silently ace the run.
+        preds[o["id"]] = o.get("prediction", "")
+    return preds
+
+
+def evaluate(gold, preds):
+    """Score every gold item. Returns (per_track, rows)."""
+    per_track = defaultdict(lambda: {"n": 0, "exact": 0, "f1_sum": 0.0,
+                                     "auto_n": 0, "auto_exact": 0, "judge_needed": 0})
+    rows = []
+    for _id in sorted(gold):
+        item = gold[_id]
+        if "track" not in item:
+            print(f"ERROR: gold id '{_id}' missing 'track'")
+            raise SystemExit(1)
+        prepared = prepare_gold(item)
+        s = score_item(item, preds.get(_id, ""), prepared)
+        tr = item["track"]
+        d = per_track[tr]
+        d["n"] += 1
+        d["exact"] += s["exact"]
+        d["f1_sum"] += s["token_f1"]
+        needs_judge = is_long_form(item, prepared)
+        d["judge_needed"] += int(needs_judge)
+        if not needs_judge and not s.get("skipped_auto"):
+            d["auto_n"] += 1
+            d["auto_exact"] += s["exact"]
+        rows.append({"id": _id, "track": tr, **s,
+                     "needs_judge": needs_judge,
+                     "missing_pred": _id not in preds})
+    return per_track, rows
+
+
+def aggregate(per_track):
+    """Totals + official micro averages; MICRO-AUTO is always within [0, 1]."""
+    total_n = sum(d["n"] for d in per_track.values())
+    total_exact = sum(d["exact"] for d in per_track.values())
+    total_f1 = sum(d["f1_sum"] for d in per_track.values())
+    auto_n = sum(d["auto_n"] for d in per_track.values())
+    auto_exact = sum(d["auto_exact"] for d in per_track.values())
+    return {
+        "total_n": total_n,
+        "total_exact": total_exact,
+        "total_f1": total_f1,
+        "auto_n": auto_n,
+        "auto_exact": auto_exact,
+        "micro_all": (total_exact / total_n) if total_n else 0.0,
+        "micro_auto": (auto_exact / auto_n) if auto_n else 0.0,
+    }
+
+
+def group_accuracy(per_track, names):
+    n = sum(per_track[t]["n"] for t in names if t in per_track)
+    e = sum(per_track[t]["exact"] for t in names if t in per_track)
+    return n, (e / n if n else 0)
 
 
 def main():
@@ -136,91 +200,51 @@ def main():
     ap.add_argument("--out", default=None, help="optional JSON output path")
     args = ap.parse_args()
 
-    gold_list = load_jsonl(args.gold, "gold")
-    gold = {}
-    for o in gold_list:
-        if o["id"] in gold:
-            print(f"ERROR: duplicate gold id '{o['id']}'")
-            raise SystemExit(1)
-        gold[o["id"]] = o
-
-    preds = {}
-    for o in load_jsonl(args.preds, "preds"):
-        if o["id"] in preds:
-            print(f"ERROR: duplicate pred id '{o['id']}'")
-            raise SystemExit(1)
-        # NOTE: only "prediction" counts; a stray "answer" key is ignored
-        # so that passing the gold file as preds cannot silently ace the run.
-        preds[o["id"]] = o.get("prediction", "")
-
-    per_track = defaultdict(lambda: {"n": 0, "exact": 0, "f1_sum": 0.0,
-                                     "auto_n": 0, "auto_exact": 0, "judge_needed": 0})
-    rows = []
-    for _id in sorted(gold):
-        item = gold[_id]
-        if not isinstance(item, dict) or "track" not in item:
-            print(f"ERROR: gold id '{_id}' missing 'track'")
-            raise SystemExit(1)
-        s = score_item(item, preds.get(_id, ""))
-        tr = item["track"]
-        d = per_track[tr]
-        d["n"] += 1
-        d["exact"] += s["exact"]
-        d["f1_sum"] += s["token_f1"]
-        needs_judge = is_long_form(item)
-        d["judge_needed"] += int(needs_judge)
-        if not needs_judge and not s.get("skipped_auto"):
-            d["auto_n"] += 1
-            d["auto_exact"] += s["exact"]
-        rows.append({"id": _id, "track": tr, **s,
-                     "needs_judge": needs_judge,
-                     "missing_pred": _id not in preds})
+    gold = build_gold_map(load_jsonl(args.gold, "gold"))
+    preds = build_pred_map(load_jsonl(args.preds, "preds"))
+    per_track, rows = evaluate(gold, preds)
+    totals = aggregate(per_track)
 
     print(f"{'track':<10}{'n':>4}  {'exact_acc':>10}  {'avg_tokenF1*':>13}  judge_needed")
-    total_n = total_exact = 0
-    total_f1 = 0.0
-    auto_n = auto_exact = 0
     for tr in sorted(per_track):
         d = per_track[tr]
         acc = d["exact"] / d["n"] if d["n"] else 0
         avgf1 = d["f1_sum"] / d["n"] if d["n"] else 0
         print(f"{tr:<10}{d['n']:>4}  {acc:>10.3f}  {avgf1:>13.3f}  {d['judge_needed']}")
-        total_n += d["n"]
-        total_exact += d["exact"]
-        total_f1 += d["f1_sum"]
-        auto_n += d["auto_n"]
-        auto_exact += d["auto_exact"]
 
-    def agg(names):
-        n = sum(per_track[t]["n"] for t in names if t in per_track)
-        e = sum(per_track[t]["exact"] for t in names if t in per_track)
-        return n, (e / n if n else 0)
-
-    if total_n:
+    if totals["total_n"]:
         print("-" * 55)
-        print(f"{'MICRO-ALL':<10}{total_n:>4}  {total_exact/total_n:>10.3f}  {total_f1/total_n:>13.3f}")
-        if auto_n:
-            print(f"{'MICRO-AUTO':<10}{auto_n:>4}  {auto_exact/auto_n:>10.3f}  {'(official auto)':>13}")
+        print(f"{'MICRO-ALL':<10}{totals['total_n']:>4}  {totals['micro_all']:>10.3f}"
+              f"  {totals['total_f1']/totals['total_n']:>13.3f}")
+        if totals["auto_n"]:
+            print(f"{'MICRO-AUTO':<10}{totals['auto_n']:>4}  {totals['micro_auto']:>10.3f}"
+                  f"  {'(official auto)':>13}")
         for label, names in (("PATHAN", sorted(PATHAN_TRACKS)),
                              ("LEKHAN", sorted(LEKHAN_TRACKS)),
-                             ("REGISTER", ["register"])):
-            n, a = agg(names)
+                             ("REGISTER", [REGISTER_TRACK])):
+            n, a = group_accuracy(per_track, names)
             if n:
                 print(f"{label:<10}{n:>4}  {a:>10.3f}")
         print("\n* avg_tokenF1 is informative only (partial credit for wrong MCQ options).")
         print("saar/lekhan (+ grounded-long) are reference-only here.")
         print("Official score for those tracks = LLM-judge (1-5 rubric) + human audit.")
-        print(f"Missing preds: {sum(1 for _id in gold if _id not in preds)}/{total_n}")
+        print(f"Missing preds: {sum(1 for _id in gold if _id not in preds)}/{totals['total_n']}")
 
     if args.out:
         outp = Path(args.out)
         if outp.parent and str(outp.parent) not in ("", "."):
             outp.parent.mkdir(parents=True, exist_ok=True)
-        outp.write_text(json.dumps({"rows": rows,
-            "per_track": {k: {"n": v["n"], "acc": v["exact"]/v["n"] if v["n"] else 0,
-            "avg_f1": v["f1_sum"]/v["n"] if v["n"] else 0,
-            "auto_n": v["auto_n"]} for k, v in per_track.items()}},
-            ensure_ascii=False, indent=2), encoding="utf-8")
+        outp.write_text(json.dumps({
+            "rows": rows,
+            "per_track": {k: {"n": v["n"],
+                              "acc": v["exact"] / v["n"] if v["n"] else 0,
+                              "avg_f1": v["f1_sum"] / v["n"] if v["n"] else 0,
+                              "auto_n": v["auto_n"], "auto_exact": v["auto_exact"],
+                              "judge_needed": v["judge_needed"]}
+                          for k, v in per_track.items()},
+            "micro": {"n": totals["total_n"], "all": totals["micro_all"],
+                      "auto_n": totals["auto_n"], "auto": totals["micro_auto"]},
+        }, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"wrote {args.out}")
 
 

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
   pull_request:
 
 permissions:
@@ -11,16 +11,21 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
-
+          python-version: ${{ matrix.python-version }}
+      - name: Install dev tooling
+        run: pip install -r requirements.txt
+      - name: Lint
+        run: ruff check .
+      - name: Test
+        run: pytest
       - name: Validate dev set against schema (stdlib)
         run: python src/validate.py --data data/dev/hpl_dev.jsonl
-
       - name: Score sample predictions (stdlib smoke test)
         run: python src/evaluate.py --gold data/dev/hpl_dev.jsonl --preds examples/sample_preds.jsonl

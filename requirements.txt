@@ -1,10 +1,8 @@
-# HPL-Bench requirements
-# Core eval has zero hard dependencies (stdlib only).
-# Optional: uncomment for semantic metrics / LLM-judge.
+# Core harness: Python stdlib only — no runtime install needed.
+# Dev tooling used by CI and the test suite:
+pytest>=8.0
+ruff>=0.5
 
-# sacrebleu>=2.4      # chrF for summarization / paraphrase
-# bert-score>=0.3      # semantic similarity (multilingual)
-# rouge-score>=0.1
-# Optional backends for src/run_local.py (core eval needs none of these).
-# transformers>=4.40; torch>=2.0  # --backend hf
-# (ollama and openai-compat backends use stdlib urllib only)
+# Optional local-model backend (uncomment to run --backend hf):
+# transformers>=4.44
+# torch>=2.2

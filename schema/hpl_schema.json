@@ -6,7 +6,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^HPL-[A-Z]{2}-[0-9]{3}$",
+      "pattern": "^HPL-[A-Z]{2}-[0-9]{3,4}$",
       "description": "Stable ID, e.g. HPL-PA-001"
     },
     "track": {

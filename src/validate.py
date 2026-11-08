@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 
-ID_RE = re.compile(r"^HPL-[A-Z]{2}-[0-9]{3}$")
+ID_RE = re.compile(r"^HPL-[A-Z]{2}-[0-9]{3,4}$")
 TRACKS = {"padh", "anumaan", "vyakaran", "saar", "lekhan", "register", "grounded"}
 LEVELS = {"A1", "A2", "B1", "B2", "C1"}
 ID_PREFIX = {"padh": "PA", "anumaan": "AN", "vyakaran": "VY", "saar": "SA",
@@ -69,9 +69,13 @@ def validate_item(obj, lineno):
     if track in ("lekhan", "saar") and "rubric" not in obj:
         print(f"line {lineno}: {track} items require 'rubric'", file=sys.stderr)
         ok = False
-    if "rubric" in obj and not isinstance(obj["rubric"], dict):
-        print(f"line {lineno}: rubric must be an object", file=sys.stderr)
-        ok = False
+    if "rubric" in obj:
+        if not isinstance(obj["rubric"], dict):
+            print(f"line {lineno}: rubric must be an object", file=sys.stderr)
+            ok = False
+        elif any(not isinstance(v, str) for v in obj["rubric"].values()):
+            print(f"line {lineno}: rubric values must be strings", file=sys.stderr)
+            ok = False
     if track in ("padh", "saar", "grounded") and not obj.get("passage_hi"):
         print(f"line {lineno}: warning: {track} usually needs passage_hi", file=sys.stderr)
     return ok
@@ -82,6 +86,9 @@ def main():
     ap.add_argument("--data", required=True, help="JSONL file to validate")
     args = ap.parse_args()
     path = Path(args.data)
+    if not path.is_file():
+        print(f"ERROR: file not found: {path}", file=sys.stderr)
+        return 1
     seen = set()
     ok_all = True
     n = 0
@@ -97,10 +104,11 @@ def main():
                 ok_all = False
                 continue
             _id = obj.get("id") if isinstance(obj, dict) else None
-            if _id in seen:
+            if isinstance(_id, str) and _id in seen:
                 print(f"line {i}: duplicate id '{_id}'", file=sys.stderr)
                 ok_all = False
-            seen.add(_id)
+            if isinstance(_id, str):
+                seen.add(_id)
             if not validate_item(obj, i):
                 ok_all = False
     print(f"checked {n} items in {path}")
